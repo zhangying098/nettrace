@@ -6,39 +6,45 @@
 #include "progs/shared.h"
 #include "trace.h"
 
-enum rule_level {
+enum rule_level
+{
 	RULE_INFO,
 	RULE_WARN,
 	RULE_ERROR,
 };
 
-typedef struct {
+typedef struct
+{
 	enum rule_level level;
 	enum rule_type type;
 	char *msg;
 	char *adv;
 	struct list_head list;
 
-	union {
+	union
+	{
 		int expected;
-		struct {
+		struct
+		{
 			int min;
 			int max;
 		} range;
 	};
 } rule_t;
 
-#define ANALY_CTX_ERROR	(1 << 0)
-#define ANALY_CTX_WARN	(1 << 1)
+#define ANALY_CTX_ERROR (1 << 0)
+#define ANALY_CTX_WARN (1 << 1)
 
-typedef struct {
+typedef struct
+{
 	struct list_head entries;
 	struct list_head fakes;
 	u16 refs;
 	u16 status;
 } analy_ctx_t;
 
-typedef struct fake_analy_ctx {
+typedef struct fake_analy_ctx
+{
 	analy_ctx_t *ctx;
 	u64 key;
 	struct hlist_node hash;
@@ -46,7 +52,8 @@ typedef struct fake_analy_ctx {
 	u16 refs;
 } fake_analy_ctx_t;
 
-typedef struct {
+typedef struct
+{
 	/* packet that belongs to the same context */
 	struct list_head list;
 	analy_ctx_t *ctx;
@@ -65,58 +72,65 @@ typedef struct {
 	struct list_head cpu_list;
 } analy_entry_t;
 
-typedef struct {
+typedef struct
+{
 	retevent_t event;
 	analy_entry_t *entry;
-	u64	key;
-	u16	cpu;
+	u64 key;
+	u16 cpu;
 } analy_exit_t;
 
-typedef enum analyzer_result {
+typedef enum analyzer_result
+{
 	RESULT_CONT,
 	RESULT_CONSUME,
 	RESULT_FINISH,
 } analyzer_result_t;
 
-typedef struct analyzer {
+/*
+	涵盖 entry 点和 exit 点分析
+	name 和 mode
+*/
+typedef struct analyzer
+{
 	analyzer_result_t (*analy_entry)(trace_t *trace, analy_entry_t *e);
 	analyzer_result_t (*analy_exit)(trace_t *trace, analy_exit_t *e);
 	char *name;
 	u32 mode;
 } analyzer_t;
 
-#define ANALY_ENTRY_RETURNED	(1 << 0)
-#define ANALY_ENTRY_EXTINFO	(1 << 1)
-#define ANALY_ENTRY_MSG		(1 << 2)
-#define ANALY_ENTRY_ONCPU	(1 << 3)
+#define ANALY_ENTRY_RETURNED (1 << 0)
+#define ANALY_ENTRY_EXTINFO (1 << 1)
+#define ANALY_ENTRY_MSG (1 << 2)
+#define ANALY_ENTRY_ONCPU (1 << 3)
 
 #define ANALYZER(name) analyzer_##name
-#define DEFINE_ANALYZER_PART(name, type, mode_mask)			\
-	analyzer_result_t analyzer_##name##_exit(trace_t *trace,	\
-		analy_exit_t *e) __attribute__((weak));			\
-	analyzer_result_t analyzer_##name##_entry(trace_t *trace,	\
-		analy_entry_t *e) __attribute__((weak));		\
-	analyzer_t ANALYZER(name) = {					\
-		.analy_entry = analyzer_##name##_entry,			\
-		.analy_exit = analyzer_##name##_exit,			\
-		.mode = mode_mask,					\
-	};								\
-	analyzer_result_t analyzer_##name##_##type(trace_t *trace,	\
-		analy_##type##_t *e)
-#define DEFINE_ANALYZER_ENTRY(name, mode)				\
+#define DEFINE_ANALYZER_PART(name, type, mode_mask)                                    \
+	analyzer_result_t analyzer_##name##_exit(trace_t *trace,                           \
+											 analy_exit_t *e) __attribute__((weak));   \
+	analyzer_result_t analyzer_##name##_entry(trace_t *trace,                          \
+											  analy_entry_t *e) __attribute__((weak)); \
+	analyzer_t ANALYZER(name) = {                                                      \
+		.analy_entry = analyzer_##name##_entry,                                        \
+		.analy_exit = analyzer_##name##_exit,                                          \
+		.mode = mode_mask,                                                             \
+	};                                                                                 \
+	analyzer_result_t analyzer_##name##_##type(trace_t *trace,                         \
+											   analy_##type##_t *e)
+#define DEFINE_ANALYZER_ENTRY(name, mode) \
 	DEFINE_ANALYZER_PART(name, entry, mode)
-#define DEFINE_ANALYZER_EXIT(name, mode)				\
+#define DEFINE_ANALYZER_EXIT(name, mode) \
 	DEFINE_ANALYZER_PART(name, exit, mode)
-#define DEFINE_ANALYZER_EXIT_FUNC(name)					\
-	analyzer_result_t analyzer_##name##_exit(trace_t *trace,	\
-		analy_exit_t *e)
+#define DEFINE_ANALYZER_EXIT_FUNC(name)                      \
+	analyzer_result_t analyzer_##name##_exit(trace_t *trace, \
+											 analy_exit_t *e)
 
-#define DEFINE_ANALYZER_EXIT_FUNC_DEFAULT(name)				\
-DEFINE_ANALYZER_EXIT_FUNC(name)						\
-{									\
-	rule_run_ret(e->entry, trace, e->event.val);			\
-	return RESULT_CONT;						\
-}
+#define DEFINE_ANALYZER_EXIT_FUNC_DEFAULT(name)      \
+	DEFINE_ANALYZER_EXIT_FUNC(name)                  \
+	{                                                \
+		rule_run_ret(e->entry, trace, e->event.val); \
+		return RESULT_CONT;                          \
+	}
 
 #define DECLARE_ANALYZER(name) extern analyzer_t ANALYZER(name)
 #define IS_ANALYZER(target, name) (target == &(ANALYZER(name)))
@@ -131,14 +145,14 @@ DECLARE_ANALYZER(qdisc);
 DECLARE_ANALYZER(default);
 
 #ifndef COMPAT_MODE
-#define define_pure_event(type, name, data)			\
-	pure_##type *name =					\
-		(!trace_ctx.detail ? (void *)(data) +		\
-			offsetof(type, __event_filed) :		\
-			(void *)(data) +			\
-			offsetof(detail_##type, __event_filed))
+#define define_pure_event(type, name, data)                    \
+	pure_##type *name =                                        \
+		(!trace_ctx.detail ? (void *)(data) +                  \
+								 offsetof(type, __event_filed) \
+						   : (void *)(data) +                  \
+								 offsetof(detail_##type, __event_filed))
 #else
-#define define_pure_event(type, name, data)			\
+#define define_pure_event(type, name, data) \
 	detail_##type *name = (void *)(data)
 #endif
 
@@ -211,7 +225,7 @@ static inline void entry_set_msg(analy_entry_t *e, char *info)
 static inline bool mode_has_context()
 {
 	return (1 << trace_ctx.mode) & (TRACE_MODE_TIMELINE_MASK |
-		TRACE_MODE_DIAG_MASK);
+									TRACE_MODE_DIAG_MASK);
 }
 
 #endif

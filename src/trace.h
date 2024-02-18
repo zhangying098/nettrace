@@ -12,57 +12,60 @@
 #include <bpf_utils.h>
 #include "progs/kprobe_trace.h"
 
-enum trace_type {
+enum trace_type
+{
 	TRACE_FUNCTION,
 	TRACE_TP,
 };
 
 struct analyzer;
 
-#define TRACE_LOADED		(1 << 0)
-#define TRACE_ENABLE		(1 << 1)
-#define TRACE_INVALID		(1 << 2)
-#define TRACE_RET		(1 << 3)
-#define TRACE_STACK		(1 << 4)
-#define TRACE_ATTACH_MANUAL	(1 << 5)
-#define TRACE_RET_ONLY		(1 << 6)
+#define TRACE_LOADED (1 << 0)
+#define TRACE_ENABLE (1 << 1)
+#define TRACE_INVALID (1 << 2)
+#define TRACE_RET (1 << 3)
+#define TRACE_STACK (1 << 4)
+#define TRACE_ATTACH_MANUAL (1 << 5)
+#define TRACE_RET_ONLY (1 << 6)
 
-#define trace_for_each(pos)		\
+#define trace_for_each(pos) \
 	list_for_each_entry(pos, &trace_list, all)
-#define trace_for_each_cond(pos, cond)	\
-	trace_for_each(pos) 		\
-		if (cond)
+#define trace_for_each_cond(pos, cond) \
+	trace_for_each(pos) if (cond)
 
-#define bpf_pbn(obj, name)	\
+#define bpf_pbn(obj, name) \
 	bpf_object__find_program_by_name(obj, name)
 
-typedef struct trace_group {
-	char	*name;
-	char	*desc;
+typedef struct trace_group
+{
+	char *name;
+	char *desc;
 	struct list_head children;
 	struct list_head list;
 	struct list_head traces;
 } trace_group_t;
 
-enum {
+enum
+{
 	TRACE_MONITOR_EXIT = 1,
 	TRACE_MONITOR_ENTRY,
 	TRACE_MONITOR_ALL,
 };
 
-typedef struct trace {
+typedef struct trace
+{
 	/* name of the kernel function this trace targeted */
-	char	name[128];
-	char	*desc;
-	char	*msg;
+	char name[128];
+	char *desc;
+	char *msg;
 	/* name of the eBPF program */
-	char	*prog;
+	char *prog;
 	enum trace_type type;
-	char	*cond;
-	char	*regex;
-	char	*tp;
-	int	skb;
-	int	sk;
+	char *cond;
+	char *regex;
+	char *tp;
+	int skb;
+	int sk;
 	/* traces in a global list */
 	struct list_head all;
 	/* traces in the same group */
@@ -71,24 +74,27 @@ typedef struct trace {
 	struct list_head rules;
 	/* traces that share the same target */
 	struct trace *backup;
-	bool	is_backup;
-	bool	probe;
-	int	monitor;
-	int	index;
-	int	arg_count;
-	u32	status;
+	bool is_backup;
+	bool probe;
+	int monitor;
+	int index;
+	int arg_count;
+	u32 status;
 	trace_group_t *parent;
+	// 函数入口和出口分析
 	struct analyzer *analyzer;
 	/* if this trace should be enabled by default */
-	bool	def;
+	bool def;
 } trace_t;
 
-typedef struct {
+typedef struct
+{
 	struct list_head list;
-	trace_t * trace;
+	trace_t *trace;
 } trace_list_t;
 
-typedef struct trace_args {
+typedef struct trace_args
+{
 	bool timeline;
 	bool ret;
 	bool intel;
@@ -103,14 +109,15 @@ typedef struct trace_args {
 	bool sock;
 	bool netns_current;
 	bool force;
-	u32  min_latency;
+	u32 min_latency;
 	char *traces;
 	char *traces_stack;
 	char *pkt_len;
 	char *tcp_flags;
 } trace_args_t;
 
-typedef struct {
+typedef struct
+{
 	/* open and initialize the bpf program */
 	int (*trace_load)();
 	/* load and attach the bpf program */
@@ -125,16 +132,17 @@ typedef struct {
 	struct analyzer *analyzer;
 } trace_ops_t;
 
-typedef struct {
-	trace_ops_t	*ops;
-	trace_args_t	args;
-	bpf_args_t	bpf_args;
-	trace_mode_t	mode;
-	bool		stop;
+typedef struct
+{
+	trace_ops_t *ops;
+	trace_args_t args;
+	bpf_args_t bpf_args;
+	trace_mode_t mode;
+	bool stop;
 	/* if drop reason feature is supported */
-	bool		drop_reason;
+	bool drop_reason;
 	/* enable detail output */
-	bool		detail;
+	bool detail;
 	struct bpf_object *obj;
 } trace_context_t;
 
@@ -179,10 +187,10 @@ static inline void trace_set_invalid_reason(trace_t *t, const char *reason)
 {
 	if (reason)
 		pr_debug("trace name=%s, prog=%s is made invalid for: %s\n",
-			 t->name, t->prog, reason);
+				 t->name, t->prog, reason);
 	else
 		pr_debug("trace name=%s, prog=%s is made invalid\n",
-			 t->name, t->prog);
+				 t->name, t->prog);
 	t->status |= TRACE_INVALID;
 }
 
@@ -191,7 +199,7 @@ static inline void trace_set_invalid(trace_t *t)
 	trace_set_invalid_reason(t, NULL);
 }
 
-static inline bool trace_is_invalid(trace_t *t) 
+static inline bool trace_is_invalid(trace_t *t)
 {
 	return t->status & TRACE_INVALID;
 }
@@ -225,13 +233,16 @@ static inline int trace_set_stack(trace_t *t)
 {
 	int i = 0;
 
-	for (; i < MAX_FUNC_STACK; i++) {
-		if (!trace_ctx.bpf_args.stack_funs[i]) {
+	for (; i < MAX_FUNC_STACK; i++)
+	{
+		if (!trace_ctx.bpf_args.stack_funs[i])
+		{
 			trace_ctx.bpf_args.stack_funs[i] = t->index;
 			break;
 		}
 	}
-	if (i == MAX_FUNC_STACK) {
+	if (i == MAX_FUNC_STACK)
+	{
 		pr_err("stack trace is full!\n");
 		return -1;
 	}

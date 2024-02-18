@@ -14,6 +14,7 @@
 __u32 kern_ver SEC("version") = KERN_VER;
 #endif
 
+// 该 bpf map 针对 entry 和 exit 的计数
 struct
 {
 	__uint(type, BPF_MAP_TYPE_PERCPU_ARRAY);
@@ -23,6 +24,7 @@ struct
 } m_ret SEC(".maps");
 
 #ifdef BPF_FEAT_STACK_TRACE
+// 传递调用栈信息
 struct
 {
 	__uint(type, BPF_MAP_TYPE_STACK_TRACE);
@@ -69,20 +71,33 @@ do_stack:
 static try_inline void try_trace_stack(context_t *ctx) {}
 #endif
 
+/*
+	判断当前数据包是否符合用户设置的 net namespace inode 过滤条件
+*/
 static try_inline int filter_by_netns(context_t *ctx)
 {
 	struct sk_buff *skb = ctx->skb;
+	/*
+		struct net_device 表示网络设备的各种状态和属性用于描述网络设备的信息，比如设备的名称、MAC 地址、MTU 大小、操作函数等
+	*/
 	struct net_device *dev;
 	u32 inode, netns;
+	// 网络设备的状态信息, 如网络协议栈、路由表、ARP缓存等
 	struct net *ns;
 
+	/*
+		bpf helper 函数：
+			查询内核struct possible_net_t 结构体中是否包含 net 成员
+	*/
 	if (!bpf_core_field_exists(possible_net_t, net))
 		return 0;
 
 	netns = ctx->args->netns;
+	// 如果用户没有设置 net namespace inode 且没有设置 detail 则退出
 	if (!netns && !ctx->args->detail)
 		return 0;
 
+	// _C 宏函数功能：调BPF_CORE_READ，查询 skb->dev 值
 	dev = _C(skb, dev);
 	if (!dev)
 	{
@@ -103,49 +118,78 @@ static try_inline int filter_by_netns(context_t *ctx)
 	if (ctx->args->detail)
 		((detail_event_t *)ctx->e)->netns = inode;
 
+	// 判断当前无网络是否符合用户设置的 net namespace inode 条件，不符合则跳过
 	return netns ? netns != inode : 0;
 no_ns:
 	return !!netns;
 }
 
+// 函数功能：采集数据包信息，根据用户设置进行过滤，并将数据传输到用户态
 static try_inline int handle_entry(context_t *ctx)
 {
+	// 状态控制条件 网络包过滤 + 数据采集
 	bpf_args_t *args = (void *)ctx->args;
+	/*
+		skb 数据包是在操作系统内核中处理网络数据传输的数据结构，
+		packet 数据包是网络通信中实际传输的数据单元。在 Linux
+		系统中，skb 数据包通常会包含一个或多个 packet 数据包
+	*/
+	// skb 数据包
 	struct sk_buff *skb = ctx->skb;
 	bool *matched, skip_life;
 	event_t *e = ctx->e;
+	// packet 数据包
 	packet_t *pkt;
 	u32 pid;
 
 	if (!args->ready)
 		goto err;
 
+	/*
+		在 BPF_DEBUG 模式下，使用 bpf_printk 输出调试信息
+	*/
 	pr_debug_skb("begin to handle, func=%d", ctx->func);
+	/*
+		args->pkt_fixed：
+			如果不是 NET 模式，可以跳过针对 NET 的包过滤，提高处理效率
+	*/
 	skip_life = (args->trace_mode & MODE_SKIP_LIFE_MASK) ||
 				args->pkt_fixed;
 	pid = (u32)bpf_get_current_pid_tgid();
 	pkt = &e->pkt;
+
+	// 在非 NET 情况，进入内部处理
 	if (!skip_life)
 	{
 		matched = bpf_map_lookup_elem(&m_matched, &skb);
 		if (matched && *matched)
 		{
+			// 解析数据包，根据数据包类型提取相关的数据信息
 			probe_parse_skb_always(skb, pkt);
+			// 判断当前数据包是否符合用户设置的 net namespace inode 过滤条件
 			filter_by_netns(ctx);
 			goto skip_filter;
 		}
 	}
 
+	/*
+		ARGS_CHECK 宏函数功能
+			用户是否指定 PID 监控
+		filter_by_netns 函数功能
+			用户是否指定 net namespace inode 监控
+	*/
 	if (ARGS_CHECK(args, pid, pid) || filter_by_netns(ctx))
 		goto err;
 
 	if (args->trace_mode == TRACE_MODE_SOCK_MASK)
 	{
+		// 进一步解析数据包，采集 TCP 和 UDP 相关数据
 		if (probe_parse_sk(ctx->sk, &e->ske))
 			goto err;
 	}
 	else
 	{
+		// 数据信息的采集
 		if (probe_parse_skb(skb, pkt))
 			goto err;
 	}
@@ -179,11 +223,13 @@ skip_filter:
 
 out:
 	pr_debug_skb("pkt matched");
+	// 打印栈信息
 	try_trace_stack(ctx);
 	pkt->ts = bpf_ktime_get_ns();
 	e->key = (u64)(void *)skb;
 	e->func = ctx->func;
 
+	// 将采集到的数据通过 bpf_perf_event_output 传递到用户态
 	if (ctx->size)
 		EVENT_OUTPUT_PTR(ctx->regs, ctx->e, ctx->size);
 
@@ -222,26 +268,46 @@ static try_inline int default_handle_entry(context_t *ctx)
 	}
 #else
 	/*
-		宏函数展开后的结果：
+		DECLARE_EVENT宏函数展开后的结果：
+
 		{
-			pure_event_t attribute((unused)) *e;
+			/// __attribute__((__unused__)) 是 GCC 的一个属性，用于告诉编译器该变量是未使用的，
+			/// 避免编译器产生未使用变量的警告
+			pure_event_t __attribute__((__unused__)) *e;
 			if (ctx->args->detail)
-			goto basic_detail;
-			event_t _e = {};
+				goto basic_detail;
+
+			/// event_t 为 ebpf prog hook 点被触发后的事件信息，采集默认事件信息
+			event_t _e = {0};
+
+			/// ctx_event 宏函数展开为
+			///		ctx->e = (void *)&(_e);
+			///  	ctx->size = sizeof(_e);
 			ctx_event(ctx, _e);
+
+			/// 功能：将结构体 event_t 中 __event_filed 字段的地址存储在指针 e 中
+			/// (void *)ctx->e  获取 ctx 中  event_t 的地址
+			/// offsetof 为 event_t 中 __event_filed 的偏移量
+			/// 上述 event_t 地址 + 偏移量 = __event_filed 地址，不过此处的功能不太清楚
 			e = (void *)ctx->e + offsetof(event_t, __event_filed);
-		goto basic_handle;
-			basic_detail:;
-			detail_event_t __e = {};
+			goto basic_handle;
+		basic_detail:;
+			/// event_t 为 ebpf prog hook 点被触发后的事件信息，采集冗余事件信息
+			detail_event_t __e = {0};
 			ctx_event(ctx, __e);
 			e = (void *)ctx->e + offsetof(detail_event_t, __event_filed);
-			basic_handle:;
+		basic_handle:;
 		}
 	*/
+	// 此处宏函数功能： 初始化 ctx->e，根据 ctx->args->detail 判断初始化 event_t 类型（默认 or 复杂）
 	DECLARE_EVENT(event_t, e)
 	handle_entry(ctx);
 #endif
 
+	/*
+		针对 consume_skb 和 kfree_skb hook 函数
+		进行数据的清理操作
+	*/
 	switch (ctx->func)
 	{
 	case INDEX_consume_skb:
@@ -264,7 +330,11 @@ static try_inline int default_handle_entry(context_t *ctx)
  * is defined following.
  *
  **********************************************************************/
-
+// 宏函数在 src/progs/kprobe_trace.h 中定义
+/*
+	针对 kprobe 和 tracepoint 类型  hook 函数（函数由 yaml 解析）
+	进行函数实现。
+*/
 DEFINE_ALL_PROBES(KPROBE_DEFAULT, TP_DEFAULT, FNC)
 
 #ifndef BPF_FEAT_TRACING
@@ -487,6 +557,7 @@ DEFINE_KPROBE_INIT(nft_do_chain, nft_do_chain, .arg_count = 2)
 	ctx->skb = (struct sk_buff *)_(pkt->skb);
 	size = ctx->size;
 	ctx->size = 0;
+	// 采集到数据则直接返回
 	if (handle_entry(ctx))
 		return 0;
 

@@ -1,4 +1,4 @@
-/* 
+/*
  * The common part of parse skb and filter skb by specified condition.
  *
  * NOTE: This file can only be used in BPF program, can't be used in user
@@ -14,27 +14,32 @@
 #include "skb_macro.h"
 #include "skb_shared.h"
 
-
-typedef struct {
+// 控制条件 - 网络包 + 用户
+typedef struct
+{
+	// 网络包过滤条件
 	pkt_args_t pkt;
 #ifdef BPF_DEBUG
 	bool bpf_debug;
 #endif
 #ifdef DEFINE_BPF_ARGS
+	// 数据采集行为控制条件
 	DEFINE_BPF_ARGS();
 #endif
 } bpf_args_t;
 
 #define MAX_ENTRIES 256
 
-struct {
+struct
+{
 	__uint(type, BPF_MAP_TYPE_PERF_EVENT_ARRAY);
 	__uint(key_size, sizeof(int));
 	__uint(value_size, sizeof(u32));
 	__uint(max_entries, MAX_ENTRIES);
 } m_event SEC(".maps");
 
-struct {
+struct
+{
 	__uint(type, BPF_MAP_TYPE_ARRAY);
 	__uint(key_size, sizeof(int));
 	__uint(value_size, sizeof(bpf_args_t));
@@ -48,32 +53,37 @@ const volatile bool bpf_func_exist[BPF_LOCAL_FUNC_MAX] = {0};
 #define bpf_core_helper_exist(name) false
 #endif
 
-#define CONFIG() ({						\
-	int _key = 0;						\
-	void * _v = bpf_map_lookup_elem(&m_config, &_key);	\
-	if (!_v)						\
-		return 0; /* this can't happen */		\
-	(bpf_args_t*)_v;					\
+/*
+	获取控制条件 - 网络包 + 用户
+*/
+#define CONFIG() ({                                   \
+	int _key = 0;                                     \
+	void *_v = bpf_map_lookup_elem(&m_config, &_key); \
+	if (!_v)                                          \
+		return 0; /* this can't happen */             \
+	(bpf_args_t *)_v;                                 \
 })
 
-#define EVENT_OUTPUT_PTR(ctx, data, size)			\
-	bpf_perf_event_output(ctx, &m_event, BPF_F_CURRENT_CPU,	\
-			      data, size)
-#define EVENT_OUTPUT(ctx, data)					\
+#define EVENT_OUTPUT_PTR(ctx, data, size)                   \
+	bpf_perf_event_output(ctx, &m_event, BPF_F_CURRENT_CPU, \
+						  data, size)
+#define EVENT_OUTPUT(ctx, data) \
 	EVENT_OUTPUT_PTR(ctx, &data, sizeof(data))
 
-#define _(src)							\
-({								\
-	typeof(src) tmp;					\
-	bpf_probe_read_kernel(&tmp, sizeof(src), &(src));	\
-	tmp;							\
-})
+#define _(src)                                            \
+	({                                                    \
+		typeof(src) tmp;                                  \
+		bpf_probe_read_kernel(&tmp, sizeof(src), &(src)); \
+		tmp;                                              \
+	})
 
 #undef _C
 #ifdef COMPAT_MODE
-#define _C(src, a)	_((src)->a)
+// 使用 bpf_probe_read_kernel 读取变量值
+#define _C(src, a) _((src)->a)
 #else
-#define _C(src, a, ...)		BPF_CORE_READ(src, a, ##__VA_ARGS__)
+// 使用 BPF_CORE_READ 读取变量值
+#define _C(src, a, ...) BPF_CORE_READ(src, a, ##__VA_ARGS__)
 #endif
 
 #ifdef COMPAT_MODE
@@ -83,20 +93,26 @@ const volatile bool bpf_func_exist[BPF_LOCAL_FUNC_MAX] = {0};
 #endif
 
 #ifdef BPF_DEBUG
-#define pr_bpf_debug(fmt, args...) {				\
-	if (ARGS_GET_CONFIG(bpf_debug))				\
-		bpf_printk("nettrace: "fmt"\n", ##args);	\
-}
+#define pr_bpf_debug(fmt, args...)                     \
+	{                                                  \
+		if (ARGS_GET_CONFIG(bpf_debug))                \
+			bpf_printk("nettrace: " fmt "\n", ##args); \
+	}
 #else
 #define pr_bpf_debug(fmt, ...)
 #endif
-#define pr_debug_skb(fmt, ...)	\
-	pr_bpf_debug("skb=%llx, "fmt, (u64)(void *)skb, ##__VA_ARGS__)
+#define pr_debug_skb(fmt, ...) \
+	pr_bpf_debug("skb=%llx, " fmt, (u64)(void *)skb, ##__VA_ARGS__)
 
+/*
+	CONFIG() 获取控制条件 - 网络包 + 用户侧
+	ARGS_GET_CONFIG 功能
+		根据 name 获取 bpf_args_t 中的对应成员的值
+*/
+#define ARGS_GET_CONFIG(name) ((bpf_args_t *)CONFIG())->name
 
-#define ARGS_GET_CONFIG(name)		((bpf_args_t *)CONFIG())->name
-
-typedef struct {
+typedef struct
+{
 	u64 pad;
 	u64 skb;
 	u64 location;
@@ -104,14 +120,17 @@ typedef struct {
 	u32 reason;
 } kfree_skb_t;
 
-typedef struct {
+typedef struct
+{
 	void *data;
 	pkt_args_t *args;
-	union {
+	union
+	{
 		struct sk_buff *skb;
 		struct sock *sk;
 	};
-	union {
+	union
+	{
 		packet_t *pkt;
 		sock_t *ske;
 	};
@@ -121,53 +140,52 @@ typedef struct {
 	bool filter;
 } parse_ctx_t;
 
-#define TCP_H_LEN	(sizeof(struct tcphdr))
-#define UDP_H_LEN	(sizeof(struct udphdr))
-#define IP_H_LEN	(sizeof(struct iphdr))
-#define ICMP_H_LEN	(sizeof(struct icmphdr))
+#define TCP_H_LEN (sizeof(struct tcphdr))
+#define UDP_H_LEN (sizeof(struct udphdr))
+#define IP_H_LEN (sizeof(struct iphdr))
+#define ICMP_H_LEN (sizeof(struct icmphdr))
 
-#define ETH_TOTAL_H_LEN		(sizeof(struct ethhdr))
-#define IP_TOTAL_H_LEN		(ETH_TOTAL_H_LEN + IP_H_LEN)
-#define TCP_TOTAL_H_LEN		(IP_TOTAL_H_LEN + TCP_H_LEN)
-#define UDP_TOTAL_H_LEN		(IP_TOTAL_H_LEN + UDP_H_LEN)
-#define ICMP_TOTAL_H_LEN	(IP_TOTAL_H_LEN + ICMP_H_LEN)
+#define ETH_TOTAL_H_LEN (sizeof(struct ethhdr))
+#define IP_TOTAL_H_LEN (ETH_TOTAL_H_LEN + IP_H_LEN)
+#define TCP_TOTAL_H_LEN (IP_TOTAL_H_LEN + TCP_H_LEN)
+#define UDP_TOTAL_H_LEN (IP_TOTAL_H_LEN + UDP_H_LEN)
+#define ICMP_TOTAL_H_LEN (IP_TOTAL_H_LEN + ICMP_H_LEN)
 
-#define IP_CSUM_OFFSET	(ETH_TOTAL_H_LEN + offsetof(struct iphdr, check))
+#define IP_CSUM_OFFSET (ETH_TOTAL_H_LEN + offsetof(struct iphdr, check))
 
-#define SKB_END(skb)	((void *)(long)skb->data_end)
-#define SKB_DATA(skb)	((void *)(long)skb->data)
-#define SKB_CHECK_IP(skb)	\
+#define SKB_END(skb) ((void *)(long)skb->data_end)
+#define SKB_DATA(skb) ((void *)(long)skb->data)
+#define SKB_CHECK_IP(skb) \
 	(SKB_DATA(skb) + IP_TOTAL_H_LEN > SKB_END(skb))
-#define SKB_CHECK_TCP(skb)	\
+#define SKB_CHECK_TCP(skb) \
 	(SKB_DATA(skb) + TCP_TOTAL_H_LEN > SKB_END(skb))
-#define SKB_CHECK_UDP(skb)	\
+#define SKB_CHECK_UDP(skb) \
 	(SKB_DATA(skb) + UDP_TOTAL_H_LEN > SKB_END(skb))
-#define SKB_CHECK_ICMP(skb)	\
+#define SKB_CHECK_ICMP(skb) \
 	(SKB_DATA(skb) + ICMP_TOTAL_H_LEN > SKB_END(skb))
-#define SKB_HDR_IP(skb)		\
+#define SKB_HDR_IP(skb) \
 	(SKB_DATA(skb) + ETH_TOTAL_H_LEN)
 
 #define IS_PSEUDO 0x10
 
-
 static try_inline u8 get_ip_header_len(u8 h)
 {
 	u8 len = (h & 0x0F) * 4;
-	return len > IP_H_LEN ? len: IP_H_LEN;
+	return len > IP_H_LEN ? len : IP_H_LEN;
 }
 
-static try_inline
-void *load_l4_hdr(struct __sk_buff *skb, struct iphdr *ip, void *dst,
-		  __u32 len)
+static try_inline void *load_l4_hdr(struct __sk_buff *skb, struct iphdr *ip, void *dst,
+									__u32 len)
 {
 	__u32 offset, iplen;
 	void *l4;
 
 	iplen = get_ip_header_len(((u8 *)ip)[0]);
-	offset = ETH_TOTAL_H_LEN + (iplen > IP_H_LEN ? iplen: IP_H_LEN);
+	offset = ETH_TOTAL_H_LEN + (iplen > IP_H_LEN ? iplen : IP_H_LEN);
 	l4 = SKB_DATA(skb) + offset;
 
-	if (l4 + len > SKB_END(skb)) {
+	if (l4 + len > SKB_END(skb))
+	{
 		if (bpf_skb_load_bytes(skb, offset, dst, len))
 			return NULL;
 		return dst;
@@ -176,6 +194,7 @@ void *load_l4_hdr(struct __sk_buff *skb, struct iphdr *ip, void *dst,
 }
 
 /* check if the skb contains L2 head (mac head) */
+// 检查一个 skb 是否包含 L2 头（mac 头）
 static try_inline bool skb_l2_check(u16 header)
 {
 	return !header || header == (u16)~0U;
@@ -189,35 +208,41 @@ static try_inline bool skb_l4_check(u16 l4, u16 l3)
 /* used to iter some filter args, such as saddr/daddr/addr and
  * sport/dport/port
  */
-#define FILTER_ITER_OPS(args, attr, svalue, dvalue, ops)	\
-	((ops(args, attr, (dvalue)) && ops(args, attr,		\
-					 (svalue))) ||		\
-	 ops(args, s##attr, (svalue)) ||			\
+#define FILTER_ITER_OPS(args, attr, svalue, dvalue, ops) \
+	((ops(args, attr, (dvalue)) && ops(args, attr,       \
+									   (svalue))) ||     \
+	 ops(args, s##attr, (svalue)) ||                     \
 	 ops(args, d##attr, (dvalue)))
-#define FILTER_OPS_ENABLED(args, name, value)		\
+#define FILTER_OPS_ENABLED(args, name, value) \
 	ARGS_ENABLED(args, name)
-#define FILTER_ITER_ENABLED(ctx, attr)			\
+#define FILTER_ITER_ENABLED(ctx, attr) \
 	(ctx->filter && FILTER_ITER_OPS(ctx->args, attr, , , FILTER_OPS_ENABLED))
-#define FILTER_ITER_CHECK(ctx, attr, svalue, dvalue)	\
+#define FILTER_ITER_CHECK(ctx, attr, svalue, dvalue) \
 	(ctx->filter && FILTER_ITER_OPS(ctx->args, attr, svalue, dvalue, ARGS_CHECK))
-#define FILTER_OPS_IPV6_EQUEL(args, name, value) ({		\
-	int rc = 0;						\
-	if (ARGS_ENABLED(args, name)) {				\
-		u8 *__src = args->name;				\
-		u8 *__target = value;				\
-		rc = *(u64 *)__src != *(u64 *)__target ||	\
-		     *(u64 *)(__src + 8) != *(u64 *)(__target + 8); \
-	}							\
-	rc;							\
+#define FILTER_OPS_IPV6_EQUEL(args, name, value) ({         \
+	int rc = 0;                                             \
+	if (ARGS_ENABLED(args, name))                           \
+	{                                                       \
+		u8 *__src = args->name;                             \
+		u8 *__target = value;                               \
+		rc = *(u64 *)__src != *(u64 *)__target ||           \
+			 *(u64 *)(__src + 8) != *(u64 *)(__target + 8); \
+	}                                                       \
+	rc;                                                     \
 })
-#define FILTER_ITER_IPV6(ctx, svalue, dvalue)			\
-	(ctx->filter && FILTER_ITER_OPS(ctx->args, addr_v6, svalue,	\
-		dvalue, FILTER_OPS_IPV6_EQUEL))
-#define FILTER_CHECK(ctx, attr, value)			\
+#define FILTER_ITER_IPV6(ctx, svalue, dvalue)                   \
+	(ctx->filter && FILTER_ITER_OPS(ctx->args, addr_v6, svalue, \
+									dvalue, FILTER_OPS_IPV6_EQUEL))
+#define FILTER_CHECK(ctx, attr, value) \
 	(ctx->filter && ARGS_CHECK(ctx->args, attr, value))
-#define FILTER_ENABLED(ctx, attr)			\
+#define FILTER_ENABLED(ctx, attr) \
 	(ctx->filter && ARGS_ENABLED(ctx->args, attr))
 
+/*
+	对输入的 IP 数据包进行解析，提取其中的关键信息，并根据用户设置过滤条件进行判断和处理。
+	函数的结构比较复杂，包括了对 IPv4 和 IPv6 协议的处理，以及对不同传输层协议（如 TCP
+	、UDP、ICMP、ESP）的解析和过滤
+*/
 static try_inline int probe_parse_ip(void *ip, parse_ctx_t *ctx)
 {
 	packet_t *pkt = ctx->pkt;
@@ -226,34 +251,41 @@ static try_inline int probe_parse_ip(void *ip, parse_ctx_t *ctx)
 	if (!skb_l4_check(ctx->trans_header, ctx->network_header))
 		l4 = ctx->data + ctx->trans_header;
 
-	if (pkt->proto_l3 == ETH_P_IPV6) {
+	if (pkt->proto_l3 == ETH_P_IPV6)
+	{
 		struct ipv6hdr *ipv6 = ip;
 
 		/* ipv4 address is set, skip ipv6 */
 		if (FILTER_ITER_ENABLED(ctx, addr))
 			goto err;
 
+		// 读取原地址和目的地址
 		bpf_probe_read_kernel(pkt->l3.ipv6.saddr,
-				      sizeof(ipv6->saddr),
-				      &ipv6->saddr);
+							  sizeof(ipv6->saddr),
+							  &ipv6->saddr);
 		bpf_probe_read_kernel(pkt->l3.ipv6.daddr,
-				      sizeof(ipv6->daddr),
-				      &ipv6->daddr);
+							  sizeof(ipv6->daddr),
+							  &ipv6->daddr);
 
+		// 根据用户条件过滤原地址和目的地址过滤
 		if (FILTER_ITER_IPV6(ctx, pkt->l3.ipv6.saddr,
-				     pkt->l3.ipv6.daddr))
+							 pkt->l3.ipv6.daddr))
 			goto err;
 
 		pkt->proto_l4 = _(ipv6->nexthdr);
 		l4 = l4 ?: ip + sizeof(*ipv6);
-	} else {
+	}
+	else
+	{
 		struct iphdr *ipv4 = ip;
 		u32 saddr, daddr, len;
 
+		// 根据用户设置的报文长度进行过滤
 		len = bpf_ntohs(_C(ipv4, tot_len));
-		if (FILTER_ENABLED(ctx, pkt_len_1)) {
+		if (FILTER_ENABLED(ctx, pkt_len_1))
+		{
 			if (len < ARGS_GET(ctx->args, pkt_len_1) ||
-			    len > ARGS_GET(ctx->args, pkt_len_2))
+				len > ARGS_GET(ctx->args, pkt_len_2))
 				goto err;
 		}
 
@@ -276,8 +308,19 @@ static try_inline int probe_parse_ip(void *ip, parse_ctx_t *ctx)
 	if (FILTER_CHECK(ctx, l4_proto, pkt->proto_l4))
 		goto err;
 
-	switch (pkt->proto_l4) {
-	case IPPROTO_TCP: {
+	// 根据传输层协议进行信息采集
+	/*
+		tcp udp icmp
+		ESP协议：
+			IP Encapsulating Security Payload（ESP）协议
+				是一种网络层安全协议，通常用于在 IP 数据包中提供加密和认证服务。
+				ESP 协议通常与 IPsec（IP Security）协议套件一起使用，用于保护
+				数据包的隐私性、完整性和身份验证。
+	*/
+	switch (pkt->proto_l4)
+	{
+	case IPPROTO_TCP:
+	{
 		struct tcphdr *tcp = l4;
 		u16 sport = _(tcp->source);
 		u16 dport = _(tcp->dest);
@@ -288,7 +331,7 @@ static try_inline int probe_parse_ip(void *ip, parse_ctx_t *ctx)
 
 		flags = _(((u8 *)tcp)[13]);
 		if (FILTER_ENABLED(ctx, tcp_flags) &&
-		    !(flags & ARGS_GET(ctx->args, tcp_flags)))
+			!(flags & ARGS_GET(ctx->args, tcp_flags)))
 			goto err;
 
 		pkt->l4.tcp.sport = sport;
@@ -298,11 +341,12 @@ static try_inline int probe_parse_ip(void *ip, parse_ctx_t *ctx)
 		pkt->l4.tcp.ack = _(tcp->ack_seq);
 		break;
 	}
-	case IPPROTO_UDP: {
+	case IPPROTO_UDP:
+	{
 		struct udphdr *udp = l4;
 		u16 sport = _(udp->source);
 		u16 dport = _(udp->dest);
-	
+
 		if (FILTER_ITER_CHECK(ctx, port, sport, dport))
 			goto err;
 
@@ -311,7 +355,8 @@ static try_inline int probe_parse_ip(void *ip, parse_ctx_t *ctx)
 		break;
 	}
 	case IPPROTO_ICMPV6:
-	case IPPROTO_ICMP: {
+	case IPPROTO_ICMP:
+	{
 		struct icmphdr *icmp = l4;
 
 		if (FILTER_ITER_ENABLED(ctx, port))
@@ -322,7 +367,8 @@ static try_inline int probe_parse_ip(void *ip, parse_ctx_t *ctx)
 		pkt->l4.icmp.id = _(icmp->un.echo.id);
 		break;
 	}
-	case IPPROTO_ESP: {
+	case IPPROTO_ESP:
+	{
 		struct ip_esp_hdr *esp_hdr = l4;
 		if (FILTER_ITER_ENABLED(ctx, port))
 			goto err;
@@ -331,6 +377,7 @@ static try_inline int probe_parse_ip(void *ip, parse_ctx_t *ctx)
 		break;
 	}
 	default:
+		// 用户设置的端口校验
 		if (FILTER_ITER_ENABLED(ctx, port))
 			goto err;
 	}
@@ -364,20 +411,26 @@ static try_inline int __probe_parse_sk(parse_ctx_t *ctx)
 	u8 l4_proto;
 
 	skc = (struct sock_common *)sk;
-	switch (_C(skc, skc_family)) {
+	/*
+		struct sock_common 中的 skc_family 字段表示套接字（socket）的地址族（address family）。
+		地址族是指套接字所使用的协议族，用于指示套接字地址的格式和含义。常见的地址族包括 AF_INET
+		（IPv4 地址族）和 AF_INET6（IPv6 地址族）
+	*/
+	switch (_C(skc, skc_family))
+	{
 	case AF_INET:
 		l3_proto = ETH_P_IP;
 		ske->l3.ipv4.saddr = _C(skc, skc_rcv_saddr);
 		ske->l3.ipv4.daddr = _C(skc, skc_daddr);
 		if (FILTER_ITER_CHECK(ctx, addr, ske->l3.ipv4.saddr,
-				      ske->l3.ipv4.daddr))
+							  ske->l3.ipv4.daddr))
 			goto err;
 		break;
 	case AF_INET6:
 		l3_proto = ETH_P_IPV6;
 		break;
 	default:
-		/* shouldn't happen, as we only use sk for IP and 
+		/* shouldn't happen, as we only use sk for IP and
 		 * IPv6
 		 */
 		goto err;
@@ -392,6 +445,7 @@ static try_inline int __probe_parse_sk(parse_ctx_t *ctx)
 	l4_proto = _C(sk, sk_protocol);
 #endif
 #else
+	// bpf_core_field_size 计算该字段占用空间字节数
 	if (bpf_core_field_size(sk->sk_protocol) == 2)
 		l4_proto = _C(sk, sk_protocol);
 	else
@@ -404,11 +458,15 @@ static try_inline int __probe_parse_sk(parse_ctx_t *ctx)
 	if (FILTER_CHECK(ctx, l4_proto, l4_proto))
 		goto err;
 
-	switch (l4_proto) {
-	case IPPROTO_TCP: {
+	// 针对 TCP 和 UDP 协议信息的进一步捕获
+	switch (l4_proto)
+	{
+	case IPPROTO_TCP:
+	{
 		struct tcp_sock *tp = (void *)sk;
 
-		if (bpf_core_type_exists(struct tcp_sock)) {
+		if (bpf_core_type_exists(struct tcp_sock))
+		{
 			ske->l4.tcp.packets_out = _C(tp, packets_out);
 			ske->l4.tcp.retrans_out = _C(tp, retrans_out);
 		}
@@ -422,7 +480,7 @@ static try_inline int __probe_parse_sk(parse_ctx_t *ctx)
 	}
 
 	if (FILTER_ITER_CHECK(ctx, port, ske->l4.tcp.sport,
-			      ske->l4.tcp.dport))
+						  ske->l4.tcp.dport))
 		goto err;
 
 	ske->rqlen = _C(sk, sk_receive_queue.qlen);
@@ -437,10 +495,10 @@ static try_inline int __probe_parse_sk(parse_ctx_t *ctx)
 
 	icsk = (void *)sk;
 	bpf_probe_read_kernel(&ske->ca_state, sizeof(u8),
-		(u8 *)icsk +
-		bpf_core_field_offset(struct inet_connection_sock,
-			icsk_retransmits) -
-		1);
+						  (u8 *)icsk +
+							  bpf_core_field_offset(struct inet_connection_sock,
+													icsk_retransmits) -
+							  1);
 
 	if (bpf_core_helper_exist(jiffies64))
 		ske->timer_out = _C(icsk, icsk_timeout) - (unsigned long)bpf_jiffies64();
@@ -452,6 +510,9 @@ err:
 	return -1;
 }
 
+/*
+	解析 skb 数据包，提取包类型，并根据包类型进行数据包信息提取
+*/
 static try_inline int __probe_parse_skb(parse_ctx_t *ctx)
 {
 	struct sk_buff *skb = ctx->skb;
@@ -459,47 +520,89 @@ static try_inline int __probe_parse_skb(parse_ctx_t *ctx)
 	u16 l3_proto;
 	void *l3;
 
+	// 获取网络层头部数据
 	ctx->network_header = _C(skb, network_header);
+	// 获取链路层头部数据
 	ctx->mac_header = _C(skb, mac_header);
+	// 获取缓冲区头部数据
 	ctx->data = _C(skb, head);
 
 	pr_debug_skb("begin to parse, nh=%d mh=%d", ctx->network_header,
-		     ctx->mac_header);
+				 ctx->mac_header);
 	pr_debug_skb("th=%d", _C(skb, transport_header));
 
-	if (skb_l2_check(ctx->mac_header)) {
+	/*
+		检查数据链路层头部是否存在，如果不存在则进行处理
+
+		数据链路层头部不存在的情况主要包括以下几种情形:
+			虚拟网卡设备（如 TUN/TAP 设备）：
+				对于一些虚拟网卡设备，可能在数据包中并不包含真实的数据链路层头部信息，
+				而是直接从网络层开始传输数据。网络数据包通过虚拟网卡设备从一个端点传
+				输到另一个端点，而不需要经过物理网络接口。因此，数据包直接从网络层开
+				始传输，绕过了数据链路层。对于接收方，虚拟网卡设备可以根据网络层协议
+				类型（如 IPv4 或 IPv6）和网络层头部的信息，将数据包重新封装到相应的
+				数据链路层协议中，以便正确地传递给应用程序或其他网络设备。
+			隧道（Tunneling）技术：
+				在网络通信中，隧道技术会在原始数据包的基础上封装新的数据包，这个过程
+				可能会导致数据链路层头部被隐藏或替换
+			特殊网络环境下的数据封装：
+				在某些特殊的网络环境中，可能会对数据包进行特殊的封装处理，导致数据链
+				路层头部信息不可见或被修改。
+	*/
+	if (skb_l2_check(ctx->mac_header))
+	{
 		/*
 		 * try to parse skb for send path, which means that
 		 * ether header doesn't exist in skb.
 		 */
+		// bpf_ntohs 函数将网络字节序，转为主机字节序， skb->protocol 数据链路层协议类型, 例如以太网帧、IPV4 数据包、ARP 数据包等
 		l3_proto = bpf_ntohs(_C(skb, protocol));
 		if (!l3_proto)
 			goto err;
+		/*
+			如果网络层头部偏移量为 0，则跳转到错误处理逻辑
+				可能是因为数据包损坏、格式错误或者不符合预期的数据包结构导致的
+		*/
 		if (!ctx->network_header)
 			goto err;
+		// 计算指向网络层头部数据的指针
 		l3 = ctx->data + ctx->network_header;
-	} else if (ctx->mac_header == ctx->network_header) {
+	}
+	// 如果链路层头部与网络层头部相同，则表示数据包是 IP 数据包
+	else if (ctx->mac_header == ctx->network_header)
+	{
 		/* to tun device, mac header is the same to network header.
 		 * For this case, we assume that this is a IP packet.
 		 */
+		// 指向网络层头部数据的指针为头部数据的偏移量
 		l3 = ctx->data + ctx->network_header;
+		// 标识为 IP 协议
 		l3_proto = ETH_P_IP;
-	} else {
+	}
+	else
+	{
 		/* mac header is set properly, we can use it directly. */
+		// 指向以太网帧头部的指针
 		struct ethhdr *eth = ctx->data + ctx->mac_header;
 
 		l3 = (void *)eth + ETH_HLEN;
+		// 确认以太网上层协议类型
 		l3_proto = bpf_ntohs(_(eth->h_proto));
 	}
 
+	// 用户设置过滤条件校验
 	if (FILTER_CHECK(ctx, l3_proto, l3_proto))
 		goto err;
 
+	// 获取传输层头部数据
 	ctx->trans_header = _C(skb, transport_header);
+	// 设置协议类型
 	pkt->proto_l3 = l3_proto;
 	pr_debug_skb("l3=%d", l3_proto);
 
-	switch (l3_proto) {
+	// 根据协议类型进行相关处理
+	switch (l3_proto)
+	{
 	case ETH_P_IPV6:
 	case ETH_P_IP:
 		return probe_parse_ip(l3, ctx);
@@ -534,9 +637,13 @@ static try_inline int probe_parse_sk(struct sock *sk, sock_t *ske)
 	return __probe_parse_sk(&ctx);
 }
 
+/*
+	解析数据包，根据数据包类型提取相关的数据信息
+*/
 static try_inline int probe_parse_skb_always(struct sk_buff *skb,
-					     packet_t *pkt)
+											 packet_t *pkt)
 {
+	// 封装 skb 和 pkt，初始化包过滤条件 args，设置过滤不使能
 	parse_ctx_t ctx = {
 		.args = (void *)CONFIG(),
 		.filter = false,
@@ -547,7 +654,7 @@ static try_inline int probe_parse_skb_always(struct sk_buff *skb,
 }
 
 static try_inline int direct_parse_skb(struct __sk_buff *skb, packet_t *pkt,
-				       pkt_args_t *bpf_args)
+									   pkt_args_t *bpf_args)
 {
 	struct ethhdr *eth = SKB_DATA(skb);
 	struct iphdr *ip = (void *)(eth + 1);
@@ -563,14 +670,15 @@ static try_inline int direct_parse_skb(struct __sk_buff *skb, packet_t *pkt,
 		goto err;
 
 	if (bpf_args && (ARGS_CHECK(bpf_args, l4_proto, ip->protocol) ||
-		       ARGS_CHECK(bpf_args, saddr, ip->saddr) ||
-		       ARGS_CHECK(bpf_args, daddr, ip->daddr)))
+					 ARGS_CHECK(bpf_args, saddr, ip->saddr) ||
+					 ARGS_CHECK(bpf_args, daddr, ip->daddr)))
 		goto err;
 
 	l4_min_t *l4_p = (void *)(ip + 1);
 	struct tcphdr *tcp = (void *)l4_p;
 
-	switch (ip->protocol) {
+	switch (ip->protocol)
+	{
 	case IPPROTO_UDP:
 		if (SKB_CHECK_UDP(skb))
 			goto err;
@@ -582,10 +690,11 @@ static try_inline int direct_parse_skb(struct __sk_buff *skb, packet_t *pkt,
 		pkt->l4.tcp.flags = ((u8 *)tcp)[13];
 		pkt->l4.tcp.ack = tcp->ack_seq;
 		pkt->l4.tcp.seq = tcp->seq;
-fill_port:
+	fill_port:
 		pkt->l4.min = *l4_p;
 		break;
-	case IPPROTO_ICMP: {
+	case IPPROTO_ICMP:
+	{
 		struct icmphdr *icmp = (void *)l4_p;
 		if (SKB_CHECK_ICMP(skb))
 			goto err;
@@ -600,7 +709,7 @@ fill_port:
 	}
 
 	if (bpf_args && (ARGS_CHECK(bpf_args, sport, l4_p->sport) ||
-		       ARGS_CHECK(bpf_args, dport, l4_p->dport)))
+					 ARGS_CHECK(bpf_args, dport, l4_p->dport)))
 		return 1;
 
 	pkt->l3.ipv4.saddr = ip->saddr;

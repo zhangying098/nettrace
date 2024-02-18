@@ -37,125 +37,149 @@ static void do_parse_args(int argc, char *argv[])
 			.desc = "filter by current net namespace",
 		},
 		{
-			.lname = "pid", .type = OPTION_U32,
-			.dest = &bpf_args->pid, .set = &bpf_args->enable_pid,
+			.lname = "pid",
+			.type = OPTION_U32,
+			.dest = &bpf_args->pid,
+			.set = &bpf_args->enable_pid,
 			.desc = "filter by current process id(pid)",
 		},
 		{
-			.lname = "min-latency", .dest = &trace_args->min_latency,
+			.lname = "min-latency",
+			.dest = &trace_args->min_latency,
 			.type = OPTION_U32,
 			.desc = "filter by the minial time to live of the skb in ms",
 		},
 		{
-			.lname = "pkt-len", .dest = &trace_args->pkt_len,
+			.lname = "pkt-len",
+			.dest = &trace_args->pkt_len,
 			.type = OPTION_STRING,
 			.desc = "filter by the IP packet length (include header) in byte",
 		},
 		{
-			.lname = "tcp-flags", .dest = &trace_args->tcp_flags,
+			.lname = "tcp-flags",
+			.dest = &trace_args->tcp_flags,
 			.type = OPTION_STRING,
 			.desc = "filter by TCP flags, such as: SAPR",
 		},
-		{ .type = OPTION_BLANK },
+		{.type = OPTION_BLANK},
 		{
-			.lname = "trace", .sname = 't',
+			.lname = "trace",
+			.sname = 't',
 			.dest = &trace_args->traces,
 			.desc = "enable trace group or trace. Some traces are "
-				"disabled by default, use \"all\" to enable all",
+					"disabled by default, use \"all\" to enable all",
 		},
 		{
-			.lname = "force", .dest = &trace_args->force,
+			.lname = "force",
+			.dest = &trace_args->force,
 			.type = OPTION_BOOL,
 			.desc = "skip some check and force load nettrace",
 		},
 		{
-			.lname = "ret", .dest = &trace_args->ret,
+			.lname = "ret",
+			.dest = &trace_args->ret,
 			.type = OPTION_BOOL,
 			.desc = "show function return value",
 		},
 		{
-			.lname = "detail", .dest = &bpf_args->detail,
+			.lname = "detail",
+			.dest = &bpf_args->detail,
 			.type = OPTION_BOOL,
 			.desc = "show extern packet info, such as pid, ifname, etc",
 		},
 		{
-			.lname = "date", .dest = &trace_args->date,
+			.lname = "date",
+			.dest = &trace_args->date,
 			.type = OPTION_BOOL,
 			.desc = "print timestamp in date-time format",
 		},
 		{
-			.lname = "basic", .dest = &trace_args->basic,
+			.lname = "basic",
+			.dest = &trace_args->basic,
 			.type = OPTION_BOOL,
 			.desc = "use 'basic' trace mode, don't trace skb's life",
 		},
 		{
-			.lname = "diag", .dest = &trace_args->intel,
+			.lname = "diag",
+			.dest = &trace_args->intel,
 			.type = OPTION_BOOL,
 			.desc = "enable 'diagnose' mode",
 		},
 		{
-			.lname = "diag-quiet", .dest = &trace_args->intel_quiet,
+			.lname = "diag-quiet",
+			.dest = &trace_args->intel_quiet,
 			.type = OPTION_BOOL,
 			.desc = "only print abnormal packet",
 		},
 		{
-			.lname = "diag-keep", .dest = &trace_args->intel_keep,
+			.lname = "diag-keep",
+			.dest = &trace_args->intel_keep,
 			.type = OPTION_BOOL,
 			.desc = "don't quit when abnormal packet found",
 		},
 		{
-			.lname = "hooks", .dest = &bpf_args->hooks,
+			.lname = "hooks",
+			.dest = &bpf_args->hooks,
 			.type = OPTION_BOOL,
 			.desc = "print netfilter hooks if dropping by netfilter",
 		},
 		{
-			.lname = "drop", .dest = &trace_args->drop,
+			.lname = "drop",
+			.dest = &trace_args->drop,
 			.type = OPTION_BOOL,
 			.desc = "skb drop monitor mode, for replace of 'droptrace'",
 		},
 #ifdef BPF_FEAT_STACK_TRACE
 		{
-			.lname = "drop-stack", .dest = &trace_args->drop_stack,
+			.lname = "drop-stack",
+			.dest = &trace_args->drop_stack,
 			.type = OPTION_BOOL,
 			.desc = "print the kernel function call stack of kfree_skb",
 		},
 #endif
 		{
-			.lname = "sock", .dest = &trace_args->sock,
+			.lname = "sock",
+			.dest = &trace_args->sock,
 			.type = OPTION_BOOL,
 			.desc = "enable 'sock' mode",
 		},
 		{
-			.lname = "monitor", .dest = &trace_args->monitor,
+			.lname = "monitor",
+			.dest = &trace_args->monitor,
 			.type = OPTION_BOOL,
 			.desc = "enable 'monitor' mode",
 		},
 		{
-			.lname = "pkt-fixed", .dest = &bpf_args->pkt_fixed,
+			.lname = "pkt-fixed",
+			.dest = &bpf_args->pkt_fixed,
 			.type = OPTION_BOOL,
 			.desc = "set this option if you are sure the target "
-				"packet is not NATed to get better "
-				"performance",
+					"packet is not NATed to get better "
+					"performance",
 		},
 		{
-			.lname = "trace-stack", .dest = &trace_args->traces_stack,
+			.lname = "trace-stack",
+			.dest = &trace_args->traces_stack,
 			.type = OPTION_STRING,
 			.desc = "print call stack for traces or group",
 		},
-		{ .type = OPTION_BLANK },
+		{.type = OPTION_BLANK},
 		{
-			.sname = 'v', .dest = &show_log,
+			.sname = 'v',
+			.dest = &show_log,
 			.type = OPTION_BOOL,
 			.desc = "show log information",
 		},
 		{
-			.lname = "debug", .dest = &debug,
+			.lname = "debug",
+			.dest = &debug,
 			.type = OPTION_BOOL,
 			.desc = "show debug information",
 		},
 #ifdef BPF_DEBUG
 		{
-			.lname = "bpf-debug", .dest = &bpf_args->bpf_debug,
+			.lname = "bpf-debug",
+			.dest = &bpf_args->bpf_debug,
 			.type = OPTION_BOOL,
 			.desc = "show bpf debug information",
 		},
@@ -167,7 +191,8 @@ static void do_parse_args(int argc, char *argv[])
 			.desc = "show help information",
 		},
 		{
-			.lname = "version", .dest = &version,
+			.lname = "version",
+			.dest = &version,
 			.sname = 'V',
 			.type = OPTION_BOOL,
 			.desc = "show nettrace version",
@@ -186,7 +211,8 @@ static void do_parse_args(int argc, char *argv[])
 	else
 		set_log_level(2);
 
-	if (version) {
+	if (version)
+	{
 		pr_version();
 		exit(0);
 	}
@@ -214,13 +240,16 @@ static void do_exit(int code)
 
 int main(int argc, char *argv[])
 {
+	// 将 gen_trace.py 生成的结构体根据索引添加到 all_trace 中，后续可以根据 hook 函数的索引定位到该结构体
 	init_trace_group();
+	// 针对参数进行解析
 	do_parse_args(argc, argv);
 
 	if (trace_prepare())
 		goto err;
 
-	if (trace_bpf_load_and_attach()) {
+	if (trace_bpf_load_and_attach())
+	{
 		pr_err("failed to load kprobe-based bpf\n");
 		goto err;
 	}

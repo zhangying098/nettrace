@@ -3,117 +3,137 @@
 
 #define MAX_FUNC_STACK 16
 
-#define DEFINE_BPF_ARGS()		\
-	DEFINE_FIELD(u32, trace_mode)	\
-	DEFINE_FIELD(u32, pid)		\
-	u32  netns;			\
-	bool drop_reason;		\
-	bool detail;			\
-	bool hooks;			\
-	bool ready;			\
-	bool stack;			\
-	bool pkt_fixed;			\
-	u16  stack_funs[MAX_FUNC_STACK];
+#define DEFINE_BPF_ARGS()         \
+	DEFINE_FIELD(u32, trace_mode) \
+	DEFINE_FIELD(u32, pid)        \
+	u32 netns;                    \
+	bool drop_reason;             \
+	bool detail;                  \
+	bool hooks;                   \
+	bool ready;                   \
+	bool stack;                   \
+	bool pkt_fixed;               \
+	u16 stack_funs[MAX_FUNC_STACK];
 
 #include <skb_shared.h>
 
-typedef struct {
-	union {
-		packet_t	pkt;
-		sock_t		ske;
+// 触发 hook 点函数，默认收集事件信息
+typedef struct
+{
+	union
+	{
+		packet_t pkt;
+		sock_t ske;
 	};
-	u64		key;
-	u64		retval;
-	u32		func;
+	u64 key;
+	u64 retval;
+	u32 func;
 #ifdef BPF_FEAT_STACK_TRACE
-	u32		stack_id;
+	u32 stack_id;
 #endif
-	int		__event_filed[0];
+	int __event_filed[0];
 } event_t;
 
-typedef struct {
-	union {
-		packet_t	pkt;
-		sock_t		ske;
+// 触发 hook 点函数，默认收集详细事件信息
+typedef struct
+{
+	union
+	{
+		packet_t pkt;
+		sock_t ske;
 	};
-	u64		key;
-	u64		retval;
-	u32		func;
+	u64 key;
+	u64 retval;
+	u32 func;
 #ifdef BPF_FEAT_STACK_TRACE
-	u32		stack_id;
+	u32 stack_id;
 #endif
-	u32		pid;
-	char		task[16];
-	char		ifname[16];
-	u32		ifindex;
-	u32		netns;
-	int		__event_filed[0];
+	u32 pid;
+	char task[16];
+	char ifname[16];
+	u32 ifindex;
+	u32 netns;
+	int __event_filed[0];
 } detail_event_t;
 
-typedef struct {
+typedef struct
+{
 } pure_event_t;
 
-#define DEFINE_EVENT(name, fields...)		\
-typedef struct {				\
-	event_t event;				\
-	int __event_filed[0];			\
-	fields					\
-} name;						\
-typedef struct {				\
-	detail_event_t event;			\
-	int __event_filed[0];			\
-	fields					\
-} detail_##name;				\
-typedef struct {				\
-	fields					\
-} pure_##name;
+// 根据入参定义多个与事件相关的结构体
+#define DEFINE_EVENT(name, fields...) \
+	typedef struct                    \
+	{                                 \
+		event_t event;                \
+		int __event_filed[0];         \
+		fields                        \
+	} name;                           \
+	typedef struct                    \
+	{                                 \
+		detail_event_t event;         \
+		int __event_filed[0];         \
+		fields                        \
+	} detail_##name;                  \
+	typedef struct                    \
+	{                                 \
+		fields                        \
+	} pure_##name;
 #define event_field(type, name) type name;
 
+// 定义 drop_event_t 相关事件结构体
 DEFINE_EVENT(drop_event_t,
-	event_field(u64, location)
-	event_field(u32, reason)
-)
-
+			 event_field(u64, location)
+				 event_field(u32, reason))
+// 定义 nf_event_t 相关事件结构体
 DEFINE_EVENT(nf_event_t,
-	event_field(char, table[8])
-	event_field(char, chain[8])
-	event_field(u8, hook)
-	event_field(u8, pf)
-)
-
+			 event_field(char, table[8])
+				 event_field(char, chain[8])
+					 event_field(u8, hook)
+						 event_field(u8, pf))
+// 定义 nf_hooks_event_t 相关事件结构体
 DEFINE_EVENT(nf_hooks_event_t,
-	event_field(char, table[8])
-	event_field(char, chain[8])
-	event_field(u8, hook)
-	event_field(u8, pf)
-	event_field(u64, hooks[6])
-)
-
+			 event_field(char, table[8])
+				 event_field(char, chain[8])
+					 event_field(u8, hook)
+						 event_field(u8, pf)
+							 event_field(u64, hooks[6]))
+// 定义 qdisc_event_t 相关事件结构体
 DEFINE_EVENT(qdisc_event_t,
-	event_field(u64, last_update)
-	event_field(u32, state)
-	event_field(u32, qlen)
-	event_field(u32, flags)
-)
+			 event_field(u64, last_update)
+				 event_field(u32, state)
+					 event_field(u32, qlen)
+						 event_field(u32, flags))
 
 #define MAX_EVENT_SIZE sizeof(detail_nf_hooks_event_t)
 
-typedef struct __attribute__((__packed__)) {
+// 定义返回事件采集信息
+typedef struct __attribute__((__packed__))
+{
 	u64 ts;
 	u64 val;
 	u16 func;
 } retevent_t;
 
-typedef enum trace_mode {
+// 定义追踪的几种模式
+typedef enum trace_mode
+{
+	// 基础模式：默认情况下，启用的是生命周期跟踪模式。启用该模式后，会直接打印出报文所经过的内核函数/tracepoint
 	TRACE_MODE_BASIC,
+	// 丢包模式：监控 skb 丢包
 	TRACE_MODE_DROP,
+	//
 	TRACE_MODE_TIMELINE,
+	// 诊断模式：输出异常包的信息,默认在跟踪到异常报文后会停止跟踪(可调控)
 	TRACE_MODE_DIAG,
+	// 套接口模式: 这个模式下，不会再跟踪报文，而会跟踪套接口
 	TRACE_MODE_SOCK,
+	// 监控模式: 一种轻量化的实时监控系统中网络异常的模式
 	TRACE_MODE_MONITOR,
 } trace_mode_t;
 
-enum rule_type {
+// 定义规则类型
+enum rule_type
+{
 	/* equal */
 	RULE_RETURN_EQ = 1,
 	/* not equal */
@@ -128,36 +148,37 @@ enum rule_type {
 	RULE_RETURN_ANY,
 };
 
-#define MAX_RULE_COUNT	8
-typedef struct {
+#define MAX_RULE_COUNT 8
+typedef struct
+{
 	int expected[MAX_RULE_COUNT];
 	int op[MAX_RULE_COUNT];
 } rules_ret_t;
 
-#define TRACE_MODE_BASIC_MASK		(1 << TRACE_MODE_BASIC)
-#define TRACE_MODE_TIMELINE_MASK	(1 << TRACE_MODE_TIMELINE)
-#define TRACE_MODE_DIAG_MASK		(1 << TRACE_MODE_DIAG)
-#define TRACE_MODE_DROP_MASK		(1 << TRACE_MODE_DROP)
-#define TRACE_MODE_SOCK_MASK		(1 << TRACE_MODE_SOCK)
-#define TRACE_MODE_MONITOR_MASK		(1 << TRACE_MODE_MONITOR)
-#define TRACE_MODE_SKB_MASK		\
-	(TRACE_MODE_BASIC_MASK | TRACE_MODE_TIMELINE_MASK |	\
-	 TRACE_MODE_DIAG_MASK | TRACE_MODE_DROP_MASK |		\
+#define TRACE_MODE_BASIC_MASK (1 << TRACE_MODE_BASIC)
+#define TRACE_MODE_TIMELINE_MASK (1 << TRACE_MODE_TIMELINE)
+#define TRACE_MODE_DIAG_MASK (1 << TRACE_MODE_DIAG)
+#define TRACE_MODE_DROP_MASK (1 << TRACE_MODE_DROP)
+#define TRACE_MODE_SOCK_MASK (1 << TRACE_MODE_SOCK)
+#define TRACE_MODE_MONITOR_MASK (1 << TRACE_MODE_MONITOR)
+#define TRACE_MODE_SKB_MASK                             \
+	(TRACE_MODE_BASIC_MASK | TRACE_MODE_TIMELINE_MASK | \
+	 TRACE_MODE_DIAG_MASK | TRACE_MODE_DROP_MASK |      \
 	 TRACE_MODE_MONITOR_MASK)
-#define TRACE_MODE_ALL_MASK		\
+#define TRACE_MODE_ALL_MASK \
 	(TRACE_MODE_SKB_MASK | TRACE_MODE_SOCK_MASK)
-#define TRACE_MODE_CTX_MASK		\
+#define TRACE_MODE_CTX_MASK \
 	(TRACE_MODE_DIAG_MASK | TRACE_MODE_TIMELINE_MASK)
 
-#define __MACRO_SIZE(macro)	sizeof(#macro)
-#define MACRO_SIZE(macro)	__MACRO_SIZE(macro)
-#define __MACRO_CONCAT(a, b)	a##b
-#define MACRO_CONCAT(a, b)	__MACRO_CONCAT(a, b)
+#define __MACRO_SIZE(macro) sizeof(#macro)
+#define MACRO_SIZE(macro) __MACRO_SIZE(macro)
+#define __MACRO_CONCAT(a, b) a##b
+#define MACRO_CONCAT(a, b) __MACRO_CONCAT(a, b)
 
-#define TRACE_PREFIX		__trace_
-#define TRACE_RET_PREFIX	ret__trace_
-#define TRACE_PREFIX_LEN	MACRO_SIZE(TRACE_PREFIX)
-#define TRACE_NAME(name)	MACRO_CONCAT(TRACE_PREFIX, name)
-#define TRACE_RET_NAME(name)	MACRO_CONCAT(TRACE_RET_PREFIX, name)
+#define TRACE_PREFIX __trace_
+#define TRACE_RET_PREFIX ret__trace_
+#define TRACE_PREFIX_LEN MACRO_SIZE(TRACE_PREFIX)
+#define TRACE_NAME(name) MACRO_CONCAT(TRACE_PREFIX, name)
+#define TRACE_RET_NAME(name) MACRO_CONCAT(TRACE_RET_PREFIX, name)
 
 #endif
