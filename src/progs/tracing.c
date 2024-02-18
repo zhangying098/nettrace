@@ -15,94 +15,92 @@
 #define nt_regs(regs, index) (void *)((unsigned long long *)regs)[index - 1]
 #define nt_regs_ctx(ctx, index) nt_regs(ctx->regs, index)
 
-
 typedef int (*fake_func)(context_t *ctx);
-#define __DECLARE_FAKE_FUNC(name, args...)			\
+#define __DECLARE_FAKE_FUNC(name, args...) \
 	static __always_inline int name(args)
-#define DECLARE_FAKE_FUNC(name)					\
+#define DECLARE_FAKE_FUNC(name) \
 	__DECLARE_FAKE_FUNC(name, context_t *ctx)
 
 /* one trace may have more than one implement */
-#define __DEFINE_KPROBE_INIT(name, target, ctx_init...)		\
-	DECLARE_FAKE_FUNC(fake__##name);			\
-	SEC("fexit/"#target)					\
-	int TRACE_RET_NAME(name)(void **regs)			\
-	{							\
-		context_t ctx = {				\
-			.func = INDEX_##name,			\
-			.regs = regs,				\
-			.args = CONFIG(),			\
-			ctx_init				\
-		};						\
-		if (handle_exit(&ctx, regs, INDEX_##name))	\
-			return 0;				\
-		return fake__##name(&ctx);			\
-	}							\
-	SEC("fentry/"#target)					\
-	int TRACE_NAME(name)(void **regs)			\
-	{							\
-		context_t ctx = {				\
-			.func = INDEX_##name,			\
-			.regs = regs,				\
-			.args = CONFIG(),			\
-			ctx_init				\
-		};						\
-		return fake__##name(&ctx);			\
-	}							\
+#define __DEFINE_KPROBE_INIT(name, target, ctx_init...) \
+	DECLARE_FAKE_FUNC(fake__##name);                    \
+	SEC("fexit/" #target)                               \
+	int TRACE_RET_NAME(name)(void **regs)               \
+	{                                                   \
+		context_t ctx = {                               \
+			.func = INDEX_##name,                       \
+			.regs = regs,                               \
+			.args = CONFIG(),                           \
+			ctx_init};                                  \
+		if (handle_exit(&ctx, regs, INDEX_##name))      \
+			return 0;                                   \
+		return fake__##name(&ctx);                      \
+	}                                                   \
+	SEC("fentry/" #target)                              \
+	int TRACE_NAME(name)(void **regs)                   \
+	{                                                   \
+		context_t ctx = {                               \
+			.func = INDEX_##name,                       \
+			.regs = regs,                               \
+			.args = CONFIG(),                           \
+			ctx_init};                                  \
+		return fake__##name(&ctx);                      \
+	}                                                   \
 	DECLARE_FAKE_FUNC(fake__##name)
 
 /* expand name and target sufficiently */
-#define DEFINE_KPROBE_INIT(name, target, ctx_init...)		\
+#define DEFINE_KPROBE_INIT(name, target, ctx_init...) \
 	__DEFINE_KPROBE_INIT(name, target, ctx_init)
 
-#define __KPROBE_DEFAULT(name, skb_index, sk_index, acount)	\
-	DEFINE_KPROBE_INIT(name, name,				\
-		.skb = nt_ternary_take(skb_index,		\
-				       nt_regs(regs, skb_index),\
-				       NULL),			\
-		.arg_count = acount)				\
-	{							\
-		return default_handle_entry(ctx);		\
+#define __KPROBE_DEFAULT(name, skb_index, sk_index, acount)             \
+	DEFINE_KPROBE_INIT(name, name,                                      \
+					   .skb = nt_ternary_take(skb_index,                \
+											  nt_regs(regs, skb_index), \
+											  NULL),                    \
+					   .arg_count = acount)                             \
+	{                                                                   \
+		return default_handle_entry(ctx);                               \
 	}
 #define KPROBE_DUMMY(name, skb_index, sk_index, acount)
 
 /* for now, only generate BPF program for monitor case */
-#define KPROBE_DEFAULT(name, skb_index, sk_index, acount)	\
-	nt_ternary_take(acount, __KPROBE_DEFAULT,		\
-		KPROBE_DUMMY)(name, skb_index, sk_index, acount)
+#define KPROBE_DEFAULT(name, skb_index, sk_index, acount) \
+	nt_ternary_take(acount, __KPROBE_DEFAULT,             \
+					KPROBE_DUMMY)(name, skb_index, sk_index, acount)
 
-#define DEFINE_TP_INIT(name, cata, tp, ctx_init...)		\
-	DECLARE_FAKE_FUNC(fake__##name);			\
-	SEC("tp_btf/"#tp)					\
-	int TRACE_NAME(name)(void **regs) {			\
-		context_t ctx = {				\
-			.func = INDEX_##name,			\
-			.regs = regs,				\
-			.args = CONFIG(),			\
-			ctx_init				\
-		};						\
-		return fake__##name(&ctx);			\
-	}							\
+#define DEFINE_TP_INIT(name, cata, tp, ctx_init...) \
+	DECLARE_FAKE_FUNC(fake__##name);                \
+	SEC("tp_btf/" #tp)                              \
+	int TRACE_NAME(name)(void **regs)               \
+	{                                               \
+		context_t ctx = {                           \
+			.func = INDEX_##name,                   \
+			.regs = regs,                           \
+			.args = CONFIG(),                       \
+			ctx_init};                              \
+		return fake__##name(&ctx);                  \
+	}                                               \
 	DECLARE_FAKE_FUNC(fake__##name)
-#define DEFINE_TP(name, cata, tp, index)			\
-	DEFINE_TP_INIT(name, cata, tp,				\
-		       .skb = nt_regs(regs, index))
-#define TP_DEFAULT(name, cata, tp, offset)			\
-	DEFINE_TP(name, cata, tp, offset)			\
-	{							\
-		return default_handle_entry(ctx);		\
+#define DEFINE_TP(name, cata, tp, index) \
+	DEFINE_TP_INIT(name, cata, tp,       \
+				   .skb = nt_regs(regs, index))
+#define TP_DEFAULT(name, cata, tp, offset) \
+	DEFINE_TP(name, cata, tp, offset)      \
+	{                                      \
+		return default_handle_entry(ctx);  \
 	}
 #define FNC(name)
 
-#define ctx_event_null(ctx, event)				\
-	ctx->e = (void *)&(event);				\
+#define ctx_event_null(ctx, event) \
+	ctx->e = (void *)&(event);     \
 	ctx->size = 0;
-#define ctx_event(ctx, event)					\
-	ctx->e = (void *)&(event);				\
+#define ctx_event(ctx, event)  \
+	ctx->e = (void *)&(event); \
 	ctx->size = sizeof(event)
 
-#define ext_event_init() { }
-
+#define ext_event_init() \
+	{                    \
+	}
 
 static try_inline int
 handle_exit(context_t *ctx, void **regs, int func_index);
@@ -126,12 +124,14 @@ handle_exit(context_t *ctx, void **regs, int func_index)
 		bpf_get_func_ret(ctx->regs, &ctx->retval);
 	else
 		bpf_probe_read_kernel(&ctx->retval, sizeof(u64),
-			regs + ctx->arg_count);
+							  regs + ctx->arg_count);
 
 	ret = (int)ctx->retval;
-	for (i = 0; i < MAX_RULE_COUNT; i++) {
+	for (i = 0; i < MAX_RULE_COUNT; i++)
+	{
 		expected = rules->expected[i];
-		switch (rules->op[i]) {
+		switch (rules->op[i])
+		{
 		case RULE_RETURN_ANY:
 			hit = true;
 			break;
